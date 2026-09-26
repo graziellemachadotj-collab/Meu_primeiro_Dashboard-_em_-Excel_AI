@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard de Despesas - Grazielle</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box} body{margin:0;font-family:Arial,sans-serif;background:#f3f6fa;color:#172033}
+.container{max-width:1100px;margin:auto;padding:24px}.header{background:#173f67;color:white;padding:28px;border-radius:18px;margin-bottom:20px}
+h1{margin:0 0 8px;font-size:28px}.subtitle{opacity:.9}
+.controls{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}.btn{border:0;border-radius:10px;padding:12px 16px;cursor:pointer;font-weight:700;background:#1f6feb;color:white}.btn.secondary{background:#475569}.btn.green{background:#16845b}.btn.orange{background:#c66a00}.btn.gray{background:#64748b}
+input[type=file]{display:none}.file-label{display:inline-block}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-bottom:20px}.card{background:white;border-radius:15px;padding:20px;box-shadow:0 3px 12px #00000010}.label{font-size:13px;color:#64748b}.value{font-size:25px;font-weight:800;margin-top:8px;color:#173f67}
+.panel{background:white;border-radius:15px;padding:20px;box-shadow:0 3px 12px #00000010;margin-bottom:20px} h2{font-size:18px;margin-top:0}
+.chart-wrap{height:360px}.table-wrap{overflow:auto;max-height:430px}table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;font-size:13px}th{background:#edf4fb;color:#173f67}
+.status{padding:10px 12px;background:#eef6ff;border-radius:10px;color:#27547a;margin-bottom:15px}
+@media(max-width:700px){.stats{grid-template-columns:1fr}.container{padding:14px}.header{padding:20px}.chart-wrap{height:300px}}
+@media print{.controls,.status{display:none}.container{max-width:none;padding:0}.header{color:#111;background:white;border:1px solid #ddd}.panel,.card{box-shadow:none;border:1px solid #ddd}}
+</style>
+</head>
+<body>
+<div class="container">
+<header class="header">
+  <h1>Dashboard de Despesas</h1>
+  <div class="subtitle"><strong>Aluno:</strong> Grazielle &nbsp; | &nbsp; <strong>Curso:</strong> Inteligência Artificial &nbsp; | &nbsp; <strong>Data:</strong> 26/09/2026</div>
+</header>
+
+<div class="controls">
+  <label class="btn file-label" for="excelFile">📥 Importar Excel</label>
+  <input id="excelFile" type="file" accept=".xlsx,.xls,.csv">
+  <button class="btn green" id="pdfBtn">📄 Salvar/Exportar PDF</button>
+  <button class="btn orange" id="wordBtn">📝 Exportar Word</button>
+  <button class="btn secondary" id="csvBtn">📊 Exportar CSV</button>
+  <button class="btn gray" id="resetBtn">↺ Limpar</button>
+</div>
+
+<div id="status" class="status">Carregue um arquivo Excel (.xlsx/.xls) ou CSV para atualizar o dashboard. Uma planilha de exemplo já está carregada.</div>
+
+<section class="stats">
+  <div class="card"><div class="label">TOTAL DE DESPESAS</div><div class="value" id="total">R$ 0,00</div></div>
+  <div class="card"><div class="label">MÉDIA POR DESPESA</div><div class="value" id="media">R$ 0,00</div></div>
+  <div class="card"><div class="label">MAIOR DESPESA</div><div class="value" id="maior">R$ 0,00</div><div class="label" id="maiorDesc"></div></div>
+</section>
+
+<section class="panel">
+  <h2>Gráfico de despesas por categoria</h2>
+  <div class="chart-wrap"><canvas id="chart"></canvas></div>
+</section>
+
+<section class="panel">
+  <h2>Dados importados</h2>
+  <div class="table-wrap"><table id="dataTable"></table></div>
+</section>
+</div>
+
+<script>
+let rows = [
+["Data","Descrição","Categoria","Forma de Pagamento","Valor (R$)"],
+["01/09/2026","Supermercado","Alimentação","Cartão",245.80],
+["03/09/2026","Conta de energia","Moradia","Pix",118.50],
+["04/09/2026","Internet","Serviços","Débito",89.90],
+["05/09/2026","Farmácia","Saúde","Cartão",67.40],
+["06/09/2026","Transporte","Transporte","Pix",45.00],
+["08/09/2026","Restaurante","Alimentação","Cartão",72.90],
+["10/09/2026","Aluguel","Moradia","Pix",1200.00],
+["12/09/2026","Celular","Serviços","Débito",59.99],
+["14/09/2026","Material escolar","Educação","Cartão",84.75],
+["16/09/2026","Combustível","Transporte","Cartão",150.00],
+["18/09/2026","Roupas","Pessoal","Pix",129.90],
+["20/09/2026","Cinema","Lazer","Cartão",55.00],
+["22/09/2026","Feira","Alimentação","Dinheiro",96.30],
+["24/09/2026","Produtos de limpeza","Casa","Pix",78.60],
+["26/09/2026","Academia","Saúde","Débito",99.90]
+];
+let chart;
+
+const money = n => n.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+function parseNumber(v){
+  if(typeof v==="number") return v;
+  if(v==null) return 0;
+  let s=String(v).replace(/[R$\s]/g,"");
+  if(s.includes(",") && s.includes(".")) s=s.replace(/\./g,"").replace(",",".");
+  else if(s.includes(",")) s=s.replace(",",".");
+  const n=parseFloat(s); return Number.isFinite(n)?n:0;
+}
+function render(){
+  const header=rows[0]||[];
+  const body=rows.slice(1).filter(r=>r.length);
+  let vals=body.map(r=>parseNumber(r[4])).filter(v=>v>0);
+  const total=vals.reduce((a,b)=>a+b,0), media=vals.length?total/vals.length:0, maior=vals.length?Math.max(...vals):0;
+  const mi=body.find(r=>parseNumber(r[4])===maior);
+  document.getElementById("total").textContent=money(total);
+  document.getElementById("media").textContent=money(media);
+  document.getElementById("maior").textContent=money(maior);
+  document.getElementById("maiorDesc").textContent=mi?String(mi[1]||""):"";
+  const cats={}; body.forEach(r=>{const c=String(r[2]||"Sem categoria");cats[c]=(cats[c]||0)+parseNumber(r[4]);});
+  if(chart) chart.destroy();
+  chart=new Chart(document.getElementById("chart"),{type:"bar",data:{labels:Object.keys(cats),datasets:[{label:"Despesas (R$)",data:Object.values(cats),borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true}},scales:{y:{beginAtZero:true}}}});
+  const t=document.getElementById("dataTable"); t.innerHTML="";
+  const trh=document.createElement("tr"); header.forEach(h=>{const th=document.createElement("th");th.textContent=h??"";trh.appendChild(th)});t.appendChild(trh);
+  body.forEach(r=>{const tr=document.createElement("tr");r.forEach((v,i)=>{const td=document.createElement("td");td.textContent=i===4?money(parseNumber(v)):String(v??"");tr.appendChild(td)});t.appendChild(tr)});
+}
+document.getElementById("excelFile").addEventListener("change",e=>{
+ const file=e.target.files[0]; if(!file)return;
+ const reader=new FileReader();
+ reader.onload=ev=>{
+   try{
+    const wb=XLSX.read(ev.target.result,{type:"array"}); const ws=wb.Sheets[wb.SheetNames[0]];
+    rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+    render(); document.getElementById("status").textContent="Excel importado com sucesso: "+file.name;
+   }catch(err){document.getElementById("status").textContent="Não foi possível ler o arquivo. Verifique se é Excel ou CSV.";}
+ };
+ reader.readAsArrayBuffer(file);
+});
+document.getElementById("pdfBtn").addEventListener("click",()=>window.print());
+document.getElementById("csvBtn").addEventListener("click",()=>{
+ const csv=rows.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(";")).join("\n");
+ download(new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}),"dashboard_despesas.csv");
+});
+document.getElementById("wordBtn").addEventListener("click",()=>{
+ const table=document.getElementById("dataTable").outerHTML;
+ const html=`<html><head><meta charset="utf-8"><title>Dashboard de Despesas</title></head><body>
+ <h1>Dashboard de Despesas</h1><p><b>Aluno:</b> Grazielle | <b>Curso:</b> Inteligência Artificial | <b>Data:</b> 26/09/2026</p>
+ <h2>Estatísticas</h2><p><b>Total:</b> ${document.getElementById("total").textContent} &nbsp; <b>Média:</b> ${document.getElementById("media").textContent} &nbsp; <b>Maior:</b> ${document.getElementById("maior").textContent}</p>
+ <h2>Dados</h2>${table}</body></html>`;
+ download(new Blob(["\ufeff"+html],{type:"application/msword"}),"dashboard_despesas.doc");
+});
+document.getElementById("resetBtn").addEventListener("click",()=>{location.reload()});
+function download(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+render();
+</script>
+</body>
+</html>
